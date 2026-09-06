@@ -2,6 +2,7 @@ package com.example.iykyk
 
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.content.Context
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
@@ -19,10 +20,13 @@ data class DetectedFace(
     val smileProbability: Float,
     val tightCrop: Bitmap,
     val generousCrop: Bitmap,
-    val sharpness: Float
+    val sharpness: Float,
+    val embedding: FloatArray
 )
 
-class FaceAnalyzer : AutoCloseable {
+class FaceAnalyzer(context: Context) : AutoCloseable {
+
+    private val embedder = FaceEmbedder(context)
 
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
@@ -78,7 +82,8 @@ class FaceAnalyzer : AutoCloseable {
                     smileProbability = face.smilingProbability ?: 0f,
                     tightCrop = tightCrop,
                     generousCrop = generousCrop,
-                    sharpness = calculateSharpness(tightCrop)
+                    sharpness = calculateSharpness(tightCrop),
+                    embedding = embedder.embed(tightCrop)
                 )
             }
         }
@@ -214,5 +219,6 @@ class FaceAnalyzer : AutoCloseable {
 
     override fun close() {
         detector.close()
+        embedder.close()
     }
 }

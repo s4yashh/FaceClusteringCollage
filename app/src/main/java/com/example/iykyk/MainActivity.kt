@@ -9,16 +9,22 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.asImageBitmap
 import com.example.iykyk.ui.theme.IykykTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import java.util.IdentityHashMap
 
 class MainActivity : ComponentActivity() {
 
@@ -37,6 +43,14 @@ private data class FrameFaces(
     val timestampMs: Long,
     val bitmap: Bitmap,
     val faces: List<DetectedFace>
+)
+
+private data class ProcessingResult(
+    val faceCount: Int,
+    val trackCount: Int,
+    val validAppearanceCount: Int,
+    val personClusters: List<PersonCluster>,
+    val representativeShots: List<RepresentativeShot>
 )
 
 @Composable
@@ -68,6 +82,12 @@ fun VideoPickerScreen() {
     var validAppearanceCount by remember {
         mutableIntStateOf(0)
     }
+    var personClusters by remember {
+        mutableStateOf<List<PersonCluster>>(emptyList())
+    }
+    var representativeShots by remember {
+        mutableStateOf<List<RepresentativeShot>>(emptyList())
+    }
     var statusMessage by remember {
         mutableStateOf<String?>(null)
     }
@@ -83,6 +103,8 @@ fun VideoPickerScreen() {
         faceCount = 0
         trackCount = 0
         validAppearanceCount = 0
+        personClusters = emptyList()
+        representativeShots = emptyList()
         statusMessage = null
     }
 
@@ -138,6 +160,8 @@ fun VideoPickerScreen() {
                             faceCount = 0
                             trackCount = 0
                             validAppearanceCount = 0
+                            personClusters = emptyList()
+                            representativeShots = emptyList()
                             statusMessage = null
 
                             try {
@@ -156,8 +180,11 @@ fun VideoPickerScreen() {
 
                                 val result = withContext(Dispatchers.Default) {
                                     val detectedFrames = mutableListOf<FrameFaces>()
+                                    val allDetectedFaces = mutableListOf<DetectedFace>()
+                                    val observationsByFace = IdentityHashMap<DetectedFace, FaceObservation>()
+                                    val selectedImages = mutableSetOf<Bitmap>()
                                     try {
-                                        val faceAnalyzer = FaceAnalyzer()
+                                        val faceAnalyzer = FaceAnalyzer(context)
                                         try {
                                             frames.forEachIndexed { index, (timestamp, bitmap) ->
                                                 val faces = try {
@@ -171,20 +198,26 @@ fun VideoPickerScreen() {
                                                     emptyList()
                                                 }
                                                 detectedFrames += FrameFaces(timestamp, bitmap, faces)
+                                                allDetectedFaces += faces
+                                                faces.forEach { face ->
+                                                    observationsByFace[face] = FaceObservation(
+                                                        timestampMs = timestamp,
+                                                        face = face,
+                                                        embedding = face.embedding,
+                                                        frameIndex = index,
+                                                        videoId = uri.toString(),
+                                                        frameWidth = bitmap.width,
+                                                        frameHeight = bitmap.height
+                                                    )
+                                                }
 
                                                 if (faces.isNotEmpty()) {
                                                     Log.d(
                                                         "IYKYK_FACE",
                                                         "timestamp=${timestamp}ms faces=${faces.size} " +
                                                             faces.joinToString(separator = " | ") { face ->
-                                                                "box=${face.boundingBox} " +
-                                                                    "yaw=${face.headYaw} roll=${face.headRoll} " +
-                                                                    "leftEye=${face.leftEyeOpenProbability} " +
-                                                                    "rightEye=${face.rightEyeOpenProbability} " +
-                                                                    "smile=${face.smileProbability} " +
-                                                                    "sharpness=${face.sharpness} " +
-                                                                    "tight=${face.tightCrop.width}x${face.tightCrop.height} " +
-                                                                    "generous=${face.generousCrop.width}x${face.generousCrop.height}"
+                                                                "box=${face.boundingBox} yaw=${face.headYaw} " +
+                                                                    "roll=${face.headRoll} sharpness=${face.sharpness}"
                                                             }
                                                     )
                                                 }
@@ -198,64 +231,42 @@ fun VideoPickerScreen() {
                                         }
 
                                         withContext(Dispatchers.Main.immediate) {
-                                            statusMessage = "Generating face embeddings..."
+                                            statusMessage = "Tracking appearances..."
                                         }
-                                        val embedder = MobileFaceNetEmbedder(context)
-                                        val observationsByFrame = mutableListOf<List<FaceObservation>>()
-                                        try {
-                                            val totalDetections = detectedFrames.sumOf { it.faces.size }
-                                            var completedEmbeddings = 0
-                                            detectedFrames.forEachIndexed { frameIndex, frame ->
-                                                val observations = mutableListOf<FaceObservation>()
-                                                for (face in frame.faces) {
-                                                    try {
-                                                        val embedding = embedder.embed(face.tightCrop)
-                                                        observations += FaceObservation(
-                                                            timestampMs = frame.timestampMs,
-                                                            face = face,
-                                                            embedding = embedding,
-                                                            frameIndex = frameIndex
-                                                        )
-                                                    } catch (error: Exception) {
-                                                        Log.d(
-                                                            "IYKYK_EMBEDDING",
-                                                            "Skipping embedding at ${frame.timestampMs}ms: " +
-                                                                "${error.message}"
-                                                        )
-                                                        null
-                                                    } finally {
-                                                        completedEmbeddings++
-                                                        withContext(Dispatchers.Main.immediate) {
-                                                                progress = 0.7f +
-                                                                    (completedEmbeddings.toFloat() /
-                                                                        totalDetections.coerceAtLeast(1)) * 0.2f
-                                                        }
-                                                    }
-                                                }
-                                                observationsByFrame += observations
-                                            }
-                                        } finally {
-                                            embedder.close()
+                                        val tracks = FaceTracker().track(allDetectedFaces)
+                                        withContext(Dispatchers.Main.immediate) {
+                                            progress = 0.82f
+                                            statusMessage = "Clustering identities..."
+                                        }
+                                        val people = IdentityClusterer().cluster(tracks)
+                                        val personClusters = people.map { person ->
+                                            PersonCluster(
+                                                personId = person.id,
+                                                observations = person.tracks
+                                                    .flatMap { track -> track.faces }
+                                                    .mapNotNull { face -> observationsByFace[face] },
+                                                appearanceCount = person.appearanceCount
+                                            )
                                         }
 
                                         withContext(Dispatchers.Main.immediate) {
-                                            statusMessage = "Tracking appearances..."
+                                            progress = 0.9f
+                                            statusMessage = "Selecting representative shots..."
                                         }
-                                        val tracker = AppearanceTracker()
-                                        observationsByFrame.forEachIndexed { index, observations ->
-                                            val timestamp = detectedFrames[index].timestampMs
-                                            tracker.processFrame(timestamp, observations)
-                                            withContext(Dispatchers.Main.immediate) {
-                                                progress = 0.9f +
-                                                    ((index + 1).toFloat() /
-                                                        observationsByFrame.size.coerceAtLeast(1)) * 0.1f
-                                            }
+                                        val representativeShots = RepresentativeShotSelector()
+                                            .selectForVideo(personClusters, uri.toString())
+                                        selectedImages += representativeShots.map { it.image }
+                                        withContext(Dispatchers.Main.immediate) {
+                                            progress = 1f
                                         }
-                                        tracker.finish()
-                                        Triple(
-                                            detectedFrames.sumOf { it.faces.size },
-                                            tracker.completedTracks.size,
-                                            tracker.completedTracks.count { it.isValidAppearance }
+                                        ProcessingResult(
+                                            faceCount = allDetectedFaces.size,
+                                            trackCount = tracks.size,
+                                            validAppearanceCount = tracks.count { track ->
+                                                track.faces.any { it.sharpness >= 0.15f }
+                                            },
+                                            personClusters = personClusters,
+                                            representativeShots = representativeShots
                                         )
                                     } finally {
                                         detectedFrames.forEach { frame ->
@@ -263,20 +274,28 @@ fun VideoPickerScreen() {
                                                 if (face.tightCrop !== frame.bitmap && !face.tightCrop.isRecycled) {
                                                     face.tightCrop.recycle()
                                                 }
-                                                if (face.generousCrop !== frame.bitmap && !face.generousCrop.isRecycled) {
+                                                if (face.generousCrop !== frame.bitmap &&
+                                                    face.generousCrop !in selectedImages &&
+                                                    !face.generousCrop.isRecycled
+                                                ) {
                                                     face.generousCrop.recycle()
                                                 }
                                             }
                                             if (!frame.bitmap.isRecycled) frame.bitmap.recycle()
                                         }
+                                        frames.forEach { (_, bitmap) ->
+                                            if (!bitmap.isRecycled) bitmap.recycle()
+                                        }
                                     }
                                 }
 
-                                faceCount = result.first
-                                trackCount = result.second
-                                validAppearanceCount = result.third
+                                faceCount = result.faceCount
+                                trackCount = result.trackCount
+                                validAppearanceCount = result.validAppearanceCount
+                                personClusters = result.personClusters
+                                representativeShots = result.representativeShots
                                 progress = 1f
-                                statusMessage = "Appearance tracking complete"
+                                statusMessage = "Processing complete"
                             } catch (error: Exception) {
                                 Log.d(
                                     "IYKYK_FACE",
@@ -336,6 +355,67 @@ fun VideoPickerScreen() {
             Text(text = "Face detections: $faceCount")
             Text(text = "Appearance tracks: $trackCount")
             Text(text = "Valid appearances: $validAppearanceCount")
+
+            PersonResults(
+                clusters = personClusters,
+                representativeShots = representativeShots,
+                videoId = selectedVideo?.toString().orEmpty()
+            )
+        }
+    }
+}
+
+@Composable
+private fun PersonResults(
+    clusters: List<PersonCluster>,
+    representativeShots: List<RepresentativeShot>,
+    videoId: String
+) {
+    val shotsByPerson = representativeShots
+        .filter { it.videoId == videoId }
+        .associateBy { it.personId }
+    val visibleClusters = clusters
+        .filter { cluster -> shotsByPerson.containsKey(cluster.personId) }
+        .sortedBy { it.personId }
+
+    Text(
+        text = "Results",
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
+    )
+
+    if (visibleClusters.isEmpty()) {
+        Text("No person-cluster results available")
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 360.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(visibleClusters, key = { it.personId }) { cluster ->
+            val shot = shotsByPerson.getValue(cluster.personId)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        bitmap = shot.image.asImageBitmap(),
+                        contentDescription = "Person ${cluster.personId} representative",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(96.dp)
+                    )
+                    Column(modifier = Modifier.padding(start = 12.dp)) {
+                        Text("Person ${cluster.personId}")
+                        Text("${cluster.appearanceCount} appearances")
+                    }
+                }
+            }
         }
     }
 }
