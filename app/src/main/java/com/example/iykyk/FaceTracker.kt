@@ -17,9 +17,15 @@ data class Track(
     val startMs get() = faces.first().timestampMs
     val endMs get() = faces.last().timestampMs
 
-    // Use the clearest, most frontal frame for identity clustering.
+    // Average the three highest-quality frames for a stable but selective identity signal.
     val bestEmbedding: FloatArray by lazy {
-        faces.maxByOrNull { faceQuality(it) }!!.embedding
+        val topFrames = faces.sortedByDescending { faceQuality(it) }.take(3)
+        val dim = topFrames.first().embedding.size
+        val sum = FloatArray(dim)
+        topFrames.forEach { face ->
+            face.embedding.forEachIndexed { index, value -> sum[index] += value }
+        }
+        l2Normalize(FloatArray(dim) { sum[it] / topFrames.size })
     }
 }
 
