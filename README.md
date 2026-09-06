@@ -36,7 +36,7 @@ Processing runs away from the main thread. Progress covers extraction, face anal
 - Face tracking cosine similarity: `0.45`
 - Track timeout: `500 ms`
 - Minimum track sharpness: `0.15`
-- Identity clustering cosine threshold: `0.50`
+- Identity clustering cosine threshold: `0.42`
 - Representative-shot minimum sharpness: `0.20`
 
 Identity clustering compares a track against the strongest matching track already assigned to a person and prevents assignments for overlapping appearances.

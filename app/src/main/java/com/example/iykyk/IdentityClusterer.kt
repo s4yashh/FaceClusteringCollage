@@ -1,5 +1,7 @@
 package com.example.iykyk
 
+import android.util.Log
+
 data class Person(
     val id: Int,
     val tracks: MutableList<Track> = mutableListOf()
@@ -7,7 +9,7 @@ data class Person(
     val appearanceCount get() = tracks.size
 }
 
-class IdentityClusterer(private val threshold: Float = 0.5f) {
+class IdentityClusterer(private val threshold: Float = 0.42f) {
 
     fun cluster(tracks: List<Track>): List<Person> {
         val sorted = tracks.sortedBy { it.startMs }
@@ -36,10 +38,30 @@ class IdentityClusterer(private val threshold: Float = 0.5f) {
 
             if (bestPerson != null && bestSim >= threshold) {
                 bestPerson.tracks.add(track)
+                Log.d(
+                    TAG,
+                    "TRACK_ASSIGN trackId=${track.id} personId=${bestPerson.id} " +
+                        "similarity=$bestSim appearances=${bestPerson.appearanceCount}"
+                )
             } else {
-                people.add(Person(nextId++).apply { this.tracks.add(track) })
+                val person = Person(nextId++).apply { this.tracks.add(track) }
+                people.add(person)
+                Log.d(
+                    TAG,
+                    "PERSON_START personId=${person.id} trackId=${track.id} " +
+                        "bestSimilarity=$bestSim"
+                )
             }
         }
+        Log.d(
+            TAG,
+            "CLUSTER_COMPLETE people=${people.size} " +
+                "appearances=${people.joinToString { "person${it.id}=${it.appearanceCount}" }}"
+        )
         return people
+    }
+
+    companion object {
+        private const val TAG = "IYKYK_CLUSTER"
     }
 }
