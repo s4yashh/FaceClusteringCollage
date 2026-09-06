@@ -1,7 +1,9 @@
 package com.example.iykyk
 
+import android.Manifest
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,10 +24,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.content.ContextCompat
 import com.example.iykyk.ui.theme.IykykTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import android.content.pm.PackageManager
 import java.util.IdentityHashMap
 
 class MainActivity : ComponentActivity() {
@@ -97,6 +103,9 @@ fun VideoPickerScreen() {
     var showCollage by remember {
         mutableStateOf(false)
     }
+    var pendingSaveBitmap by remember {
+        mutableStateOf<Bitmap?>(null)
+    }
 
     val personResults = remember(personClusters, representativeShots, selectedVideo) {
         val videoId = selectedVideo?.toString().orEmpty()
@@ -121,6 +130,22 @@ fun VideoPickerScreen() {
 
     val scope = rememberCoroutineScope()
 
+    val savePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val bitmap = pendingSaveBitmap
+        pendingSaveBitmap = null
+        actionMessage = if (granted && bitmap != null) {
+            if (saveCollageToGallery(context, bitmap) != null) {
+                "Collage saved to Pictures"
+            } else {
+                "Could not save collage"
+            }
+        } else {
+            "Storage permission is required to save the collage"
+        }
+    }
+
     val videoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -135,13 +160,15 @@ fun VideoPickerScreen() {
         actionMessage = null
         showCollage = false
         collageBitmap = null
+        pendingSaveBitmap = null
         statusMessage = null
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -195,6 +222,7 @@ fun VideoPickerScreen() {
                             actionMessage = null
                             showCollage = false
                             collageBitmap = null
+                            pendingSaveBitmap = null
                             statusMessage = null
 
                             try {
@@ -427,10 +455,20 @@ fun VideoPickerScreen() {
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Button(onClick = {
-                        actionMessage = if (saveCollageToGallery(context, bitmap) != null) {
-                            "Collage saved to Pictures"
+                        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            pendingSaveBitmap = bitmap
+                            savePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         } else {
-                            "Could not save collage"
+                            actionMessage = if (saveCollageToGallery(context, bitmap) != null) {
+                                "Collage saved to Pictures"
+                            } else {
+                                "Could not save collage"
+                            }
                         }
                     }) {
                         Text("Save Collage")
