@@ -91,6 +91,30 @@ fun VideoPickerScreen() {
     var statusMessage by remember {
         mutableStateOf<String?>(null)
     }
+    var actionMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val personResults = remember(personClusters, representativeShots, selectedVideo) {
+        val videoId = selectedVideo?.toString().orEmpty()
+        val shotsByPerson = representativeShots
+            .filter { it.videoId == videoId }
+            .associateBy { it.personId }
+        personClusters
+            .mapNotNull { cluster ->
+                shotsByPerson[cluster.personId]?.let { shot ->
+                    PersonResult(
+                        personId = cluster.personId,
+                        representativeBitmap = shot.image,
+                        appearanceCount = cluster.appearanceCount
+                    )
+                }
+            }
+            .sortedBy { it.personId }
+    }
+    val collageBitmap = remember(personResults) {
+        personResults.takeIf { it.isNotEmpty() }?.let(::renderCollageBitmap)
+    }
 
     val scope = rememberCoroutineScope()
 
@@ -105,6 +129,7 @@ fun VideoPickerScreen() {
         validAppearanceCount = 0
         personClusters = emptyList()
         representativeShots = emptyList()
+        actionMessage = null
         statusMessage = null
     }
 
@@ -162,6 +187,7 @@ fun VideoPickerScreen() {
                             validAppearanceCount = 0
                             personClusters = emptyList()
                             representativeShots = emptyList()
+                            actionMessage = null
                             statusMessage = null
 
                             try {
@@ -357,34 +383,60 @@ fun VideoPickerScreen() {
             Text(text = "Valid appearances: $validAppearanceCount")
 
             PersonResults(
-                clusters = personClusters,
-                representativeShots = representativeShots,
-                videoId = selectedVideo?.toString().orEmpty()
+                people = personResults
             )
+
+            if (collageBitmap != null) {
+                Image(
+                    bitmap = collageBitmap.asImageBitmap(),
+                    contentDescription = "IYKYK collage preview",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .padding(top = 16.dp)
+                )
+                Row(
+                    modifier = Modifier.padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(onClick = {
+                        actionMessage = if (saveCollageToGallery(context, collageBitmap) != null) {
+                            "Collage saved to Pictures"
+                        } else {
+                            "Could not save collage"
+                        }
+                    }) {
+                        Text("Save Collage")
+                    }
+                    Button(onClick = {
+                        shareCollage(context, collageBitmap)
+                    }) {
+                        Text("Share Collage")
+                    }
+                }
+                if (actionMessage != null) {
+                    Text(
+                        text = actionMessage.orEmpty(),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun PersonResults(
-    clusters: List<PersonCluster>,
-    representativeShots: List<RepresentativeShot>,
-    videoId: String
+    people: List<PersonResult>
 ) {
-    val shotsByPerson = representativeShots
-        .filter { it.videoId == videoId }
-        .associateBy { it.personId }
-    val visibleClusters = clusters
-        .filter { cluster -> shotsByPerson.containsKey(cluster.personId) }
-        .sortedBy { it.personId }
-
     Text(
         text = "Results",
         style = MaterialTheme.typography.titleLarge,
         modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
     )
 
-    if (visibleClusters.isEmpty()) {
+    if (people.isEmpty()) {
         Text("No person-cluster results available")
         return
     }
@@ -395,8 +447,7 @@ private fun PersonResults(
             .heightIn(max = 360.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(visibleClusters, key = { it.personId }) { cluster ->
-            val shot = shotsByPerson.getValue(cluster.personId)
+        items(people, key = { it.personId }) { person ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
@@ -405,14 +456,14 @@ private fun PersonResults(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Image(
-                        bitmap = shot.image.asImageBitmap(),
-                        contentDescription = "Person ${cluster.personId} representative",
+                        bitmap = person.representativeBitmap.asImageBitmap(),
+                        contentDescription = "Person ${person.personId} representative",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(96.dp)
                     )
                     Column(modifier = Modifier.padding(start = 12.dp)) {
-                        Text("Person ${cluster.personId}")
-                        Text("${cluster.appearanceCount} appearances")
+                        Text("Person ${person.personId}")
+                        Text("${person.appearanceCount} appearances")
                     }
                 }
             }
