@@ -94,6 +94,9 @@ fun VideoPickerScreen() {
     var actionMessage by remember {
         mutableStateOf<String?>(null)
     }
+    var showCollage by remember {
+        mutableStateOf(false)
+    }
 
     val personResults = remember(personClusters, representativeShots, selectedVideo) {
         val videoId = selectedVideo?.toString().orEmpty()
@@ -130,6 +133,7 @@ fun VideoPickerScreen() {
         personClusters = emptyList()
         representativeShots = emptyList()
         actionMessage = null
+        showCollage = false
         statusMessage = null
     }
 
@@ -188,6 +192,7 @@ fun VideoPickerScreen() {
                             personClusters = emptyList()
                             representativeShots = emptyList()
                             actionMessage = null
+                            showCollage = false
                             statusMessage = null
 
                             try {
@@ -386,7 +391,19 @@ fun VideoPickerScreen() {
                 people = personResults
             )
 
-            if (collageBitmap != null) {
+            if (personResults.isNotEmpty()) {
+                Button(
+                    onClick = {
+                        showCollage = true
+                        actionMessage = null
+                    },
+                    modifier = Modifier.padding(top = 12.dp)
+                ) {
+                    Text("Create Collage")
+                }
+            }
+
+            if (showCollage && collageBitmap != null) {
                 Image(
                     bitmap = collageBitmap.asImageBitmap(),
                     contentDescription = "IYKYK collage preview",
