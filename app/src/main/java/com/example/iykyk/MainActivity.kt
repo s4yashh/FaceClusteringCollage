@@ -115,8 +115,8 @@ fun VideoPickerScreen() {
             }
             .sortedBy { it.personId }
     }
-    val collageBitmap = remember(personResults) {
-        personResults.takeIf { it.isNotEmpty() }?.let(::renderCollageBitmap)
+    var collageBitmap by remember {
+        mutableStateOf<Bitmap?>(null)
     }
 
     val scope = rememberCoroutineScope()
@@ -134,6 +134,7 @@ fun VideoPickerScreen() {
         representativeShots = emptyList()
         actionMessage = null
         showCollage = false
+        collageBitmap = null
         statusMessage = null
     }
 
@@ -193,6 +194,7 @@ fun VideoPickerScreen() {
                             representativeShots = emptyList()
                             actionMessage = null
                             showCollage = false
+                            collageBitmap = null
                             statusMessage = null
 
                             try {
@@ -395,7 +397,14 @@ fun VideoPickerScreen() {
                 Button(
                     onClick = {
                         showCollage = true
-                        actionMessage = null
+                        actionMessage = "Creating collage..."
+                        scope.launch(Dispatchers.Default) {
+                            val generated = renderCollageBitmap(personResults)
+                            withContext(Dispatchers.Main.immediate) {
+                                collageBitmap = generated
+                                actionMessage = "Collage ready"
+                            }
+                        }
                     },
                     modifier = Modifier.padding(top = 12.dp)
                 ) {
@@ -403,9 +412,9 @@ fun VideoPickerScreen() {
                 }
             }
 
-            if (showCollage && collageBitmap != null) {
+            collageBitmap?.takeIf { showCollage }?.let { bitmap ->
                 Image(
-                    bitmap = collageBitmap.asImageBitmap(),
+                    bitmap = bitmap.asImageBitmap(),
                     contentDescription = "IYKYK collage preview",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -418,7 +427,7 @@ fun VideoPickerScreen() {
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Button(onClick = {
-                        actionMessage = if (saveCollageToGallery(context, collageBitmap) != null) {
+                        actionMessage = if (saveCollageToGallery(context, bitmap) != null) {
                             "Collage saved to Pictures"
                         } else {
                             "Could not save collage"
@@ -427,7 +436,7 @@ fun VideoPickerScreen() {
                         Text("Save Collage")
                     }
                     Button(onClick = {
-                        shareCollage(context, collageBitmap)
+                        shareCollage(context, bitmap)
                     }) {
                         Text("Share Collage")
                     }
