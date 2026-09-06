@@ -1,6 +1,7 @@
 package com.example.iykyk
 
 import android.graphics.Rect
+import android.util.Log
 import kotlin.math.sqrt
 
 fun faceQuality(f: DetectedFace): Float {
@@ -91,17 +92,39 @@ class FaceTracker(
                     val newTrack = Track(nextId++).apply { faces.add(face) }
                     active.add(newTrack)
                     used.add(newTrack.id)
+                    Log.d(
+                        TAG,
+                        "TRACK_START trackId=${newTrack.id} timestamp=${face.timestampMs}"
+                    )
                 }
             }
 
             val expired = active.filter { timestamp - it.endMs > maxGapMs }
+            expired.forEach { track ->
+                Log.d(
+                    TAG,
+                    "TRACK_END trackId=${track.id} start=${track.startMs} " +
+                        "end=${track.endMs} frames=${track.faces.size}"
+                )
+            }
             finished.addAll(expired)
             active.removeAll(expired)
+        }
+        active.forEach { track ->
+            Log.d(
+                TAG,
+                "TRACK_END trackId=${track.id} start=${track.startMs} " +
+                    "end=${track.endMs} frames=${track.faces.size}"
+            )
         }
         finished.addAll(active)
 
         return finished.filter { t ->
             t.faces.size >= 2 && t.faces.any { it.sharpness >= minSharpness }
         }
+    }
+
+    companion object {
+        private const val TAG = "IYKYK_TRACK"
     }
 }
