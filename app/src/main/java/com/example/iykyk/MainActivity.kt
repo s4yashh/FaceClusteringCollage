@@ -408,6 +408,12 @@ fun VideoPickerScreen() {
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
+        if (actionMessage != null && collageBitmap == null) {
+            Text(
+                text = actionMessage.orEmpty(),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
         if (!isProcessing && frameCount > 0) {
             Text(
                 text = "Frames: $frameCount",
@@ -427,10 +433,18 @@ fun VideoPickerScreen() {
                         showCollage = true
                         actionMessage = "Creating collage..."
                         scope.launch(Dispatchers.Default) {
-                            val generated = renderCollageBitmap(personResults)
-                            withContext(Dispatchers.Main.immediate) {
-                                collageBitmap = generated
-                                actionMessage = "Collage ready"
+                            try {
+                                val generated = renderCollageBitmap(personResults)
+                                withContext(Dispatchers.Main.immediate) {
+                                    collageBitmap = generated
+                                    actionMessage = "Collage ready"
+                                }
+                            } catch (error: Exception) {
+                                Log.e("IYKYK_COLLAGE", "Could not render collage", error)
+                                withContext(Dispatchers.Main.immediate) {
+                                    showCollage = false
+                                    actionMessage = "Could not create collage: ${error.message ?: "unknown error"}"
+                                }
                             }
                         }
                     },
