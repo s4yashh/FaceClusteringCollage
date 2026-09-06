@@ -9,7 +9,7 @@ data class Person(
     val appearanceCount get() = tracks.size
 }
 
-class IdentityClusterer(private val threshold: Float = 0.42f) {
+class IdentityClusterer(private val threshold: Float = 0.6f) {
 
     fun cluster(tracks: List<Track>): List<Person> {
         val sorted = tracks.sortedBy { it.startMs }

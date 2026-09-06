@@ -58,7 +58,7 @@ class FaceTracker(
     private val iouThreshold: Float = 0.2f,
     private val simThreshold: Float = 0.45f,
     private val maxGapMs: Long = 500L,
-    private val minSharpness: Float = 0.15f
+    private val minSharpness: Float = 0.20f
 ) {
     fun track(allFaces: List<DetectedFace>): List<Track> {
         val byFrame = allFaces.sortedBy { it.timestampMs }.groupBy { it.timestampMs }
